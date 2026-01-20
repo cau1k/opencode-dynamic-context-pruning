@@ -257,6 +257,7 @@
         },
         "baseConfig": {
             "type": "object",
+            "additionalProperties": false,
             "properties": {
                 "enabled": {
                     "$ref": "#/$defs/enabledSetting"

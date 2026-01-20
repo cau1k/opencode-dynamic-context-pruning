@@ -48,6 +48,7 @@ export interface TurnProtection {
 export interface PluginConfig {
     enabled: boolean
     debug: boolean
+    showUpdateToasts?: boolean
     pruneNotification: "off" | "minimal" | "detailed"
     turnProtection: TurnProtection
     protectedFilePatterns: string[]
@@ -65,6 +66,7 @@ export interface PluginConfig {
 export interface PartialPluginConfig {
     enabled?: boolean
     debug?: boolean
+    showUpdateToasts?: boolean
     pruneNotification?: "off" | "minimal" | "detailed"
     turnProtection?: {
         enabled?: boolean
@@ -590,6 +592,7 @@ function showConfigValidationWarnings(
 const defaultConfig: PluginConfig = {
     enabled: true,
     debug: false,
+    showUpdateToasts: true,
     pruneNotification: "detailed",
     turnProtection: {
         enabled: false,
@@ -917,6 +920,7 @@ function mergePartialConfig(base: PluginConfig, override: PartialPluginConfig): 
     return {
         enabled: override.enabled ?? base.enabled,
         debug: override.debug ?? base.debug,
+        showUpdateToasts: override.showUpdateToasts ?? base.showUpdateToasts,
         pruneNotification: override.pruneNotification ?? base.pruneNotification,
         turnProtection: {
             enabled: override.turnProtection?.enabled ?? base.turnProtection.enabled,
@@ -1009,6 +1013,7 @@ export function getConfig(ctx: PluginInput): PluginConfig {
             config = {
                 enabled: result.data.enabled ?? config.enabled,
                 debug: result.data.debug ?? config.debug,
+                showUpdateToasts: result.data.showUpdateToasts ?? config.showUpdateToasts,
                 pruneNotification: result.data.pruneNotification ?? config.pruneNotification,
                 turnProtection: {
                     enabled: result.data.turnProtection?.enabled ?? config.turnProtection.enabled,
@@ -1052,6 +1057,7 @@ export function getConfig(ctx: PluginInput): PluginConfig {
             config = {
                 enabled: result.data.enabled ?? config.enabled,
                 debug: result.data.debug ?? config.debug,
+                showUpdateToasts: result.data.showUpdateToasts ?? config.showUpdateToasts,
                 pruneNotification: result.data.pruneNotification ?? config.pruneNotification,
                 turnProtection: {
                     enabled: result.data.turnProtection?.enabled ?? config.turnProtection.enabled,
@@ -1092,6 +1098,7 @@ export function getConfig(ctx: PluginInput): PluginConfig {
             config = {
                 enabled: result.data.enabled ?? config.enabled,
                 debug: result.data.debug ?? config.debug,
+                showUpdateToasts: result.data.showUpdateToasts ?? config.showUpdateToasts,
                 pruneNotification: result.data.pruneNotification ?? config.pruneNotification,
                 turnProtection: {
                     enabled: result.data.turnProtection?.enabled ?? config.turnProtection.enabled,
