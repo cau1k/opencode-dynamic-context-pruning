@@ -11,22 +11,56 @@
             "description": "JSON Schema reference for IDE autocomplete"
         },
         "enabled": {
+            "$ref": "#/$defs/enabledSetting"
+        },
+        "debug": {
+            "$ref": "#/$defs/debugSetting"
+        },
+        "showUpdateToasts": {
+            "$ref": "#/$defs/showUpdateToastsSetting"
+        },
+        "pruneNotification": {
+            "$ref": "#/$defs/pruneNotificationSetting"
+        },
+        "turnProtection": {
+            "$ref": "#/$defs/turnProtectionSetting"
+        },
+        "protectedFilePatterns": {
+            "$ref": "#/$defs/protectedFilePatternsSetting"
+        },
+        "tools": {
+            "$ref": "#/$defs/toolsSetting"
+        },
+        "strategies": {
+            "$ref": "#/$defs/strategiesSetting"
+        },
+        "overrides": {
+            "$ref": "#/$defs/overrides"
+        }
+    },
+    "$defs": {
+        "enabledSetting": {
             "type": "boolean",
             "default": true,
             "description": "Enable or disable the DCP plugin"
         },
-        "debug": {
+        "debugSetting": {
             "type": "boolean",
             "default": false,
             "description": "Enable debug logging"
         },
-        "pruneNotification": {
+        "showUpdateToastsSetting": {
+            "type": "boolean",
+            "default": true,
+            "description": "(Deprecated) Show DCP update toasts"
+        },
+        "pruneNotificationSetting": {
             "type": "string",
             "enum": ["off", "minimal", "detailed"],
             "default": "detailed",
             "description": "Level of notification shown when pruning occurs"
         },
-        "turnProtection": {
+        "turnProtectionSetting": {
             "type": "object",
             "description": "Protect recent tool outputs from being pruned",
             "additionalProperties": false,
@@ -43,7 +77,7 @@
                 }
             }
         },
-        "protectedFilePatterns": {
+        "protectedFilePatternsSetting": {
             "type": "array",
             "items": {
                 "type": "string"
@@ -51,157 +85,224 @@
             "default": [],
             "description": "Glob patterns for files that should be protected from pruning (e.g., '**/*.config.ts')"
         },
-        "tools": {
+        "toolSettings": {
+            "type": "object",
+            "description": "General tool settings",
+            "additionalProperties": false,
+            "properties": {
+                "nudgeEnabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable nudge reminders to prune context"
+                },
+                "nudgeFrequency": {
+                    "type": "number",
+                    "default": 10,
+                    "description": "Frequency of nudge reminders (in turns)"
+                },
+                "protectedTools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "task",
+                        "todowrite",
+                        "todoread",
+                        "discard",
+                        "extract",
+                        "batch",
+                        "write",
+                        "edit"
+                    ],
+                    "description": "Tool names that should be protected from automatic pruning"
+                }
+            }
+        },
+        "discardToolSetting": {
+            "type": "object",
+            "description": "Configuration for the discard tool",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable the discard tool"
+                }
+            }
+        },
+        "extractToolSetting": {
+            "type": "object",
+            "description": "Configuration for the extract tool",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable the extract tool"
+                },
+                "showDistillation": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Show distillation output in the UI"
+                }
+            }
+        },
+        "toolsSetting": {
             "type": "object",
             "description": "Configuration for pruning tools",
             "additionalProperties": false,
             "properties": {
                 "settings": {
-                    "type": "object",
-                    "description": "General tool settings",
-                    "additionalProperties": false,
-                    "properties": {
-                        "nudgeEnabled": {
-                            "type": "boolean",
-                            "default": true,
-                            "description": "Enable nudge reminders to prune context"
-                        },
-                        "nudgeFrequency": {
-                            "type": "number",
-                            "default": 10,
-                            "description": "Frequency of nudge reminders (in turns)"
-                        },
-                        "protectedTools": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
-                            "default": [
-                                "task",
-                                "todowrite",
-                                "todoread",
-                                "discard",
-                                "extract",
-                                "batch",
-                                "write",
-                                "edit"
-                            ],
-                            "description": "Tool names that should be protected from automatic pruning"
-                        }
-                    }
+                    "$ref": "#/$defs/toolSettings"
                 },
                 "discard": {
-                    "type": "object",
-                    "description": "Configuration for the discard tool",
-                    "additionalProperties": false,
-                    "properties": {
-                        "enabled": {
-                            "type": "boolean",
-                            "default": true,
-                            "description": "Enable the discard tool"
-                        }
-                    }
+                    "$ref": "#/$defs/discardToolSetting"
                 },
                 "extract": {
-                    "type": "object",
-                    "description": "Configuration for the extract tool",
-                    "additionalProperties": false,
-                    "properties": {
-                        "enabled": {
-                            "type": "boolean",
-                            "default": true,
-                            "description": "Enable the extract tool"
-                        },
-                        "showDistillation": {
-                            "type": "boolean",
-                            "default": false,
-                            "description": "Show distillation output in the UI"
-                        }
-                    }
+                    "$ref": "#/$defs/extractToolSetting"
                 }
             }
         },
-        "strategies": {
+        "deduplicationStrategy": {
+            "type": "object",
+            "description": "Remove duplicate tool outputs",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable deduplication strategy"
+                },
+                "protectedTools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "task",
+                        "todowrite",
+                        "todoread",
+                        "discard",
+                        "extract",
+                        "batch",
+                        "write",
+                        "edit"
+                    ],
+                    "description": "Tool names excluded from deduplication"
+                }
+            }
+        },
+        "supersedeWritesStrategy": {
+            "type": "object",
+            "description": "Replace older write/edit outputs when new ones target the same file",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable supersede writes strategy"
+                }
+            }
+        },
+        "purgeErrorsStrategy": {
+            "type": "object",
+            "description": "Remove tool outputs that resulted in errors",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable purge errors strategy"
+                },
+                "turns": {
+                    "type": "number",
+                    "default": 4,
+                    "description": "Number of turns after which errors are purged"
+                },
+                "protectedTools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "task",
+                        "todowrite",
+                        "todoread",
+                        "discard",
+                        "extract",
+                        "batch",
+                        "write",
+                        "edit"
+                    ],
+                    "description": "Tool names excluded from error purging"
+                }
+            }
+        },
+        "strategiesSetting": {
             "type": "object",
             "description": "Automatic pruning strategies",
             "additionalProperties": false,
             "properties": {
                 "deduplication": {
-                    "type": "object",
-                    "description": "Remove duplicate tool outputs",
-                    "additionalProperties": false,
-                    "properties": {
-                        "enabled": {
-                            "type": "boolean",
-                            "default": true,
-                            "description": "Enable deduplication strategy"
-                        },
-                        "protectedTools": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
-                            "default": [
-                                "task",
-                                "todowrite",
-                                "todoread",
-                                "discard",
-                                "extract",
-                                "batch",
-                                "write",
-                                "edit"
-                            ],
-                            "description": "Tool names excluded from deduplication"
-                        }
-                    }
+                    "$ref": "#/$defs/deduplicationStrategy"
                 },
                 "supersedeWrites": {
-                    "type": "object",
-                    "description": "Replace older write/edit outputs when new ones target the same file",
-                    "additionalProperties": false,
-                    "properties": {
-                        "enabled": {
-                            "type": "boolean",
-                            "default": false,
-                            "description": "Enable supersede writes strategy"
-                        }
-                    }
+                    "$ref": "#/$defs/supersedeWritesStrategy"
                 },
                 "purgeErrors": {
+                    "$ref": "#/$defs/purgeErrorsStrategy"
+                }
+            }
+        },
+        "baseConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "$ref": "#/$defs/enabledSetting"
+                },
+                "debug": {
+                    "$ref": "#/$defs/debugSetting"
+                },
+                "showUpdateToasts": {
+                    "$ref": "#/$defs/showUpdateToastsSetting"
+                },
+                "pruneNotification": {
+                    "$ref": "#/$defs/pruneNotificationSetting"
+                },
+                "turnProtection": {
+                    "$ref": "#/$defs/turnProtectionSetting"
+                },
+                "protectedFilePatterns": {
+                    "$ref": "#/$defs/protectedFilePatternsSetting"
+                },
+                "tools": {
+                    "$ref": "#/$defs/toolsSetting"
+                },
+                "strategies": {
+                    "$ref": "#/$defs/strategiesSetting"
+                }
+            }
+        },
+        "modelOverrideConfig": {
+            "$ref": "#/$defs/baseConfig"
+        },
+        "overrideConfig": {
+            "allOf": [
+                { "$ref": "#/$defs/baseConfig" },
+                {
                     "type": "object",
-                    "description": "Remove tool outputs that resulted in errors",
-                    "additionalProperties": false,
                     "properties": {
-                        "enabled": {
-                            "type": "boolean",
-                            "default": true,
-                            "description": "Enable purge errors strategy"
-                        },
-                        "turns": {
-                            "type": "number",
-                            "default": 4,
-                            "description": "Number of turns after which errors are purged"
-                        },
-                        "protectedTools": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
-                            "default": [
-                                "task",
-                                "todowrite",
-                                "todoread",
-                                "discard",
-                                "extract",
-                                "batch",
-                                "write",
-                                "edit"
-                            ],
-                            "description": "Tool names excluded from error purging"
+                        "models": {
+                            "type": "object",
+                            "description": "Model-specific overrides. Keys can use glob patterns (* and ?) to match model IDs.",
+                            "additionalProperties": {
+                                "$ref": "#/$defs/modelOverrideConfig"
+                            }
                         }
                     }
                 }
-            }
+            ]
         },
         "overrides": {
             "type": "object",
@@ -212,130 +313,10 @@
                     "type": "object",
                     "description": "Provider-specific overrides (e.g., 'anthropic', 'openai')",
                     "additionalProperties": {
-                        "$ref": "#/$defs/providerOverride"
+                        "$ref": "#/$defs/overrideConfig"
                     }
                 }
             }
-        }
-    },
-    "$defs": {
-        "partialConfig": {
-            "type": "object",
-            "description": "Partial DCP configuration for overrides",
-            "additionalProperties": false,
-            "properties": {
-                "enabled": {
-                    "type": "boolean",
-                    "description": "Enable or disable DCP for this provider/model"
-                },
-                "debug": {
-                    "type": "boolean",
-                    "description": "Enable debug logging"
-                },
-                "pruneNotification": {
-                    "type": "string",
-                    "enum": ["off", "minimal", "detailed"],
-                    "description": "Level of notification shown when pruning occurs"
-                },
-                "turnProtection": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                        "enabled": { "type": "boolean" },
-                        "turns": { "type": "number" }
-                    }
-                },
-                "protectedFilePatterns": {
-                    "type": "array",
-                    "items": { "type": "string" }
-                },
-                "tools": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                        "settings": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "nudgeEnabled": { "type": "boolean" },
-                                "nudgeFrequency": { "type": "number" },
-                                "protectedTools": {
-                                    "type": "array",
-                                    "items": { "type": "string" }
-                                }
-                            }
-                        },
-                        "discard": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "enabled": { "type": "boolean" }
-                            }
-                        },
-                        "extract": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "enabled": { "type": "boolean" },
-                                "showDistillation": { "type": "boolean" }
-                            }
-                        }
-                    }
-                },
-                "strategies": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                        "deduplication": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "enabled": { "type": "boolean" },
-                                "protectedTools": {
-                                    "type": "array",
-                                    "items": { "type": "string" }
-                                }
-                            }
-                        },
-                        "supersedeWrites": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "enabled": { "type": "boolean" }
-                            }
-                        },
-                        "purgeErrors": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "enabled": { "type": "boolean" },
-                                "turns": { "type": "number" },
-                                "protectedTools": {
-                                    "type": "array",
-                                    "items": { "type": "string" }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "providerOverride": {
-            "allOf": [
-                { "$ref": "#/$defs/partialConfig" },
-                {
-                    "type": "object",
-                    "properties": {
-                        "models": {
-                            "type": "object",
-                            "description": "Model-specific overrides. Keys can use glob patterns (* and ?) to match model IDs.",
-                            "additionalProperties": {
-                                "$ref": "#/$defs/partialConfig"
-                            }
-                        }
-                    }
-                }
-            ]
         }
     }
 }

@@ -162,38 +162,167 @@ export const VALID_CONFIG_KEYS = new Set([
     "overrides.provider",
 ])
 
+export const VALID_OVERRIDE_KEYS = new Set(
+    Array.from(VALID_CONFIG_KEYS).filter(
+        (key) => !key.startsWith("overrides") && key !== "$schema",
+    ),
+)
+VALID_OVERRIDE_KEYS.add("models")
+
+export const VALID_MODEL_OVERRIDE_KEYS = new Set(VALID_OVERRIDE_KEYS)
+VALID_MODEL_OVERRIDE_KEYS.delete("models")
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
 // Extract all key paths from a config object for validation
-// Skips validation inside overrides.provider.* since provider/model names are dynamic
-function getConfigKeyPaths(obj: Record<string, any>, prefix = ""): string[] {
+// Skips traversal for keys listed in skipChildrenOf
+function getConfigKeyPaths(
+    obj: Record<string, unknown>,
+    prefix = "",
+    skipChildrenOf: string[] = [],
+): string[] {
     const keys: string[] = []
-    for (const key of Object.keys(obj)) {
+    for (const [key, value] of Object.entries(obj)) {
         const fullKey = prefix ? `${prefix}.${key}` : key
         keys.push(fullKey)
-        // Skip deep validation for overrides.provider.* (dynamic provider/model keys)
-        if (fullKey.startsWith("overrides.provider.")) {
+        if (skipChildrenOf.includes(fullKey)) {
             continue
         }
-        if (obj[key] && typeof obj[key] === "object" && !Array.isArray(obj[key])) {
-            keys.push(...getConfigKeyPaths(obj[key], fullKey))
+        if (isPlainObject(value)) {
+            keys.push(...getConfigKeyPaths(value, fullKey, skipChildrenOf))
         }
     }
     return keys
 }
 
+export function getInvalidKeysWithPrefix(
+    obj: Record<string, unknown>,
+    prefix: string,
+    validKeys: Set<string>,
+    skipChildrenOf: string[] = [],
+): string[] {
+    const keys = getConfigKeyPaths(obj, prefix, skipChildrenOf)
+    return keys.filter((fullKey) => {
+        const normalized = fullKey.startsWith(`${prefix}.`)
+            ? fullKey.slice(prefix.length + 1)
+            : fullKey
+        return !validKeys.has(normalized)
+    })
+}
+
+export function getInvalidOverrideKeys(userConfig: Record<string, unknown>): string[] {
+    const overrides = userConfig.overrides
+    if (!isPlainObject(overrides)) {
+        return []
+    }
+
+    const providerOverrides = overrides.provider
+    if (!isPlainObject(providerOverrides)) {
+        return []
+    }
+
+    const invalidKeys: string[] = []
+
+    for (const [providerId, providerOverride] of Object.entries(providerOverrides)) {
+        const providerPrefix = `overrides.provider.${providerId}`
+        if (!isPlainObject(providerOverride)) {
+            continue
+        }
+
+        invalidKeys.push(
+            ...getInvalidKeysWithPrefix(providerOverride, providerPrefix, VALID_OVERRIDE_KEYS, [
+                `${providerPrefix}.models`,
+            ]),
+        )
+
+        const models = providerOverride.models
+        if (!isPlainObject(models)) {
+            continue
+        }
+
+        for (const [modelId, modelOverride] of Object.entries(models)) {
+            if (!isPlainObject(modelOverride)) {
+                continue
+            }
+            const modelPrefix = `${providerPrefix}.models.${modelId}`
+            invalidKeys.push(
+                ...getInvalidKeysWithPrefix(
+                    modelOverride,
+                    modelPrefix,
+                    VALID_MODEL_OVERRIDE_KEYS,
+                ),
+            )
+        }
+    }
+
+    return invalidKeys
+}
+
+export function getOverrideTypeErrors(userConfig: Record<string, unknown>): ValidationError[] {
+    const overrides = userConfig.overrides
+    if (!isPlainObject(overrides)) {
+        return []
+    }
+
+    const providerOverrides = overrides.provider
+    if (!isPlainObject(providerOverrides)) {
+        return []
+    }
+
+    const errors: ValidationError[] = []
+
+    for (const [providerId, providerOverride] of Object.entries(providerOverrides)) {
+        if (!isPlainObject(providerOverride)) {
+            continue
+        }
+        const providerPrefix = `overrides.provider.${providerId}`
+        errors.push(...applyValidationPrefix(validateConfigTypes(providerOverride), providerPrefix))
+
+        const models = providerOverride.models
+        if (!isPlainObject(models)) {
+            continue
+        }
+
+        for (const [modelId, modelOverride] of Object.entries(models)) {
+            if (!isPlainObject(modelOverride)) {
+                continue
+            }
+            const modelPrefix = `${providerPrefix}.models.${modelId}`
+            errors.push(...applyValidationPrefix(validateConfigTypes(modelOverride), modelPrefix))
+        }
+    }
+
+    return errors
+}
+
 // Returns invalid keys found in user config
-export function getInvalidConfigKeys(userConfig: Record<string, any>): string[] {
-    const userKeys = getConfigKeyPaths(userConfig)
-    return userKeys.filter((key) => !VALID_CONFIG_KEYS.has(key))
+export function getInvalidConfigKeys(userConfig: Record<string, unknown>): string[] {
+    const userKeys = getConfigKeyPaths(userConfig, "", ["overrides.provider"])
+    return userKeys
+        .filter((key) => !VALID_CONFIG_KEYS.has(key))
+        .concat(getInvalidOverrideKeys(userConfig))
 }
 
 // Type validators for config values
-interface ValidationError {
+export interface ValidationError {
     key: string
     expected: string
     actual: string
 }
 
-function validateConfigTypes(config: Record<string, any>): ValidationError[] {
+function applyValidationPrefix(errors: ValidationError[], prefix: string): ValidationError[] {
+    if (!prefix) {
+        return errors
+    }
+    return errors.map((error) => ({
+        ...error,
+        key: `${prefix}.${error.key}`,
+    }))
+}
+
+export function validateConfigTypes(config: Record<string, unknown>): ValidationError[] {
     const errors: ValidationError[] = []
 
     // Top-level validators
@@ -203,9 +332,22 @@ function validateConfigTypes(config: Record<string, any>): ValidationError[] {
     if (config.debug !== undefined && typeof config.debug !== "boolean") {
         errors.push({ key: "debug", expected: "boolean", actual: typeof config.debug })
     }
+    if (config.showUpdateToasts !== undefined && typeof config.showUpdateToasts !== "boolean") {
+        errors.push({
+            key: "showUpdateToasts",
+            expected: "boolean",
+            actual: typeof config.showUpdateToasts,
+        })
+    }
     if (config.pruneNotification !== undefined) {
         const validValues = ["off", "minimal", "detailed"]
-        if (!validValues.includes(config.pruneNotification)) {
+        if (typeof config.pruneNotification !== "string") {
+            errors.push({
+                key: "pruneNotification",
+                expected: '"off" | "minimal" | "detailed"',
+                actual: typeof config.pruneNotification,
+            })
+        } else if (!validValues.includes(config.pruneNotification)) {
             errors.push({
                 key: "pruneNotification",
                 expected: '"off" | "minimal" | "detailed"',
@@ -231,7 +373,7 @@ function validateConfigTypes(config: Record<string, any>): ValidationError[] {
     }
 
     // Top-level turnProtection validator
-    if (config.turnProtection) {
+    if (isPlainObject(config.turnProtection)) {
         if (
             config.turnProtection.enabled !== undefined &&
             typeof config.turnProtection.enabled !== "boolean"
@@ -255,139 +397,142 @@ function validateConfigTypes(config: Record<string, any>): ValidationError[] {
     }
 
     // Tools validators
-    const tools = config.tools
-    if (tools) {
-        if (tools.settings) {
+    if (isPlainObject(config.tools)) {
+        if (isPlainObject(config.tools.settings)) {
             if (
-                tools.settings.nudgeEnabled !== undefined &&
-                typeof tools.settings.nudgeEnabled !== "boolean"
+                config.tools.settings.nudgeEnabled !== undefined &&
+                typeof config.tools.settings.nudgeEnabled !== "boolean"
             ) {
                 errors.push({
                     key: "tools.settings.nudgeEnabled",
                     expected: "boolean",
-                    actual: typeof tools.settings.nudgeEnabled,
+                    actual: typeof config.tools.settings.nudgeEnabled,
                 })
             }
             if (
-                tools.settings.nudgeFrequency !== undefined &&
-                typeof tools.settings.nudgeFrequency !== "number"
+                config.tools.settings.nudgeFrequency !== undefined &&
+                typeof config.tools.settings.nudgeFrequency !== "number"
             ) {
                 errors.push({
                     key: "tools.settings.nudgeFrequency",
                     expected: "number",
-                    actual: typeof tools.settings.nudgeFrequency,
+                    actual: typeof config.tools.settings.nudgeFrequency,
                 })
             }
             if (
-                tools.settings.protectedTools !== undefined &&
-                !Array.isArray(tools.settings.protectedTools)
+                config.tools.settings.protectedTools !== undefined &&
+                !Array.isArray(config.tools.settings.protectedTools)
             ) {
                 errors.push({
                     key: "tools.settings.protectedTools",
                     expected: "string[]",
-                    actual: typeof tools.settings.protectedTools,
+                    actual: typeof config.tools.settings.protectedTools,
                 })
             }
         }
-        if (tools.discard) {
-            if (tools.discard.enabled !== undefined && typeof tools.discard.enabled !== "boolean") {
+        if (isPlainObject(config.tools.discard)) {
+            if (
+                config.tools.discard.enabled !== undefined &&
+                typeof config.tools.discard.enabled !== "boolean"
+            ) {
                 errors.push({
                     key: "tools.discard.enabled",
                     expected: "boolean",
-                    actual: typeof tools.discard.enabled,
+                    actual: typeof config.tools.discard.enabled,
                 })
             }
         }
-        if (tools.extract) {
-            if (tools.extract.enabled !== undefined && typeof tools.extract.enabled !== "boolean") {
+        if (isPlainObject(config.tools.extract)) {
+            if (
+                config.tools.extract.enabled !== undefined &&
+                typeof config.tools.extract.enabled !== "boolean"
+            ) {
                 errors.push({
                     key: "tools.extract.enabled",
                     expected: "boolean",
-                    actual: typeof tools.extract.enabled,
+                    actual: typeof config.tools.extract.enabled,
                 })
             }
             if (
-                tools.extract.showDistillation !== undefined &&
-                typeof tools.extract.showDistillation !== "boolean"
+                config.tools.extract.showDistillation !== undefined &&
+                typeof config.tools.extract.showDistillation !== "boolean"
             ) {
                 errors.push({
                     key: "tools.extract.showDistillation",
                     expected: "boolean",
-                    actual: typeof tools.extract.showDistillation,
+                    actual: typeof config.tools.extract.showDistillation,
                 })
             }
         }
     }
 
     // Strategies validators
-    const strategies = config.strategies
-    if (strategies) {
-        // deduplication
-        if (
-            strategies.deduplication?.enabled !== undefined &&
-            typeof strategies.deduplication.enabled !== "boolean"
-        ) {
-            errors.push({
-                key: "strategies.deduplication.enabled",
-                expected: "boolean",
-                actual: typeof strategies.deduplication.enabled,
-            })
-        }
-        if (
-            strategies.deduplication?.protectedTools !== undefined &&
-            !Array.isArray(strategies.deduplication.protectedTools)
-        ) {
-            errors.push({
-                key: "strategies.deduplication.protectedTools",
-                expected: "string[]",
-                actual: typeof strategies.deduplication.protectedTools,
-            })
+    if (isPlainObject(config.strategies)) {
+        if (isPlainObject(config.strategies.deduplication)) {
+            if (
+                config.strategies.deduplication.enabled !== undefined &&
+                typeof config.strategies.deduplication.enabled !== "boolean"
+            ) {
+                errors.push({
+                    key: "strategies.deduplication.enabled",
+                    expected: "boolean",
+                    actual: typeof config.strategies.deduplication.enabled,
+                })
+            }
+            if (
+                config.strategies.deduplication.protectedTools !== undefined &&
+                !Array.isArray(config.strategies.deduplication.protectedTools)
+            ) {
+                errors.push({
+                    key: "strategies.deduplication.protectedTools",
+                    expected: "string[]",
+                    actual: typeof config.strategies.deduplication.protectedTools,
+                })
+            }
         }
 
-        // supersedeWrites
-        if (strategies.supersedeWrites) {
+        if (isPlainObject(config.strategies.supersedeWrites)) {
             if (
-                strategies.supersedeWrites.enabled !== undefined &&
-                typeof strategies.supersedeWrites.enabled !== "boolean"
+                config.strategies.supersedeWrites.enabled !== undefined &&
+                typeof config.strategies.supersedeWrites.enabled !== "boolean"
             ) {
                 errors.push({
                     key: "strategies.supersedeWrites.enabled",
                     expected: "boolean",
-                    actual: typeof strategies.supersedeWrites.enabled,
+                    actual: typeof config.strategies.supersedeWrites.enabled,
                 })
             }
         }
 
-        // purgeErrors
-        if (strategies.purgeErrors) {
+        if (isPlainObject(config.strategies.purgeErrors)) {
             if (
-                strategies.purgeErrors.enabled !== undefined &&
-                typeof strategies.purgeErrors.enabled !== "boolean"
+                config.strategies.purgeErrors.enabled !== undefined &&
+                typeof config.strategies.purgeErrors.enabled !== "boolean"
             ) {
                 errors.push({
                     key: "strategies.purgeErrors.enabled",
                     expected: "boolean",
-                    actual: typeof strategies.purgeErrors.enabled,
+                    actual: typeof config.strategies.purgeErrors.enabled,
                 })
             }
             if (
-                strategies.purgeErrors.turns !== undefined &&
-                typeof strategies.purgeErrors.turns !== "number"
+                config.strategies.purgeErrors.turns !== undefined &&
+                typeof config.strategies.purgeErrors.turns !== "number"
             ) {
                 errors.push({
                     key: "strategies.purgeErrors.turns",
                     expected: "number",
-                    actual: typeof strategies.purgeErrors.turns,
+                    actual: typeof config.strategies.purgeErrors.turns,
                 })
             }
             if (
-                strategies.purgeErrors.protectedTools !== undefined &&
-                !Array.isArray(strategies.purgeErrors.protectedTools)
+                config.strategies.purgeErrors.protectedTools !== undefined &&
+                !Array.isArray(config.strategies.purgeErrors.protectedTools)
             ) {
                 errors.push({
                     key: "strategies.purgeErrors.protectedTools",
                     expected: "string[]",
-                    actual: typeof strategies.purgeErrors.protectedTools,
+                    actual: typeof config.strategies.purgeErrors.protectedTools,
                 })
             }
         }
@@ -400,11 +545,11 @@ function validateConfigTypes(config: Record<string, any>): ValidationError[] {
 function showConfigValidationWarnings(
     ctx: PluginInput,
     configPath: string,
-    configData: Record<string, any>,
+    configData: Record<string, unknown>,
     isProject: boolean,
 ): void {
     const invalidKeys = getInvalidConfigKeys(configData)
-    const typeErrors = validateConfigTypes(configData)
+    const typeErrors = validateConfigTypes(configData).concat(getOverrideTypeErrors(configData))
 
     if (invalidKeys.length === 0 && typeErrors.length === 0) {
         return

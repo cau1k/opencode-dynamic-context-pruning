@@ -16,12 +16,73 @@ const INTERNAL_AGENT_SIGNATURES = [
     "Summarize what was done in this conversation",
 ]
 
+const DISCARD_TOOL_SPEC = loadPrompt("discard-tool-spec")
+const EXTRACT_TOOL_SPEC = loadPrompt("extract-tool-spec")
+
+type SystemPromptState = {
+    promptName: string | null
+    specsToRemove: string[]
+}
+
 /**
  * Get the effective config for the current provider/model
  * Falls back to base config if no overrides match
  */
 function getEffectiveConfig(state: SessionState, baseConfig: PluginConfig): PluginConfig {
     return resolveActiveConfig(baseConfig, state.providerId, state.modelId)
+}
+
+function getSystemPromptState(config: PluginConfig): SystemPromptState {
+    if (!config.enabled) {
+        return {
+            promptName: null,
+            specsToRemove: [DISCARD_TOOL_SPEC, EXTRACT_TOOL_SPEC],
+        }
+    }
+
+    const discardEnabled = config.tools.discard.enabled
+    const extractEnabled = config.tools.extract.enabled
+
+    let promptName: string | null = null
+    if (discardEnabled && extractEnabled) {
+        promptName = "system/system-prompt-both"
+    } else if (discardEnabled) {
+        promptName = "system/system-prompt-discard"
+    } else if (extractEnabled) {
+        promptName = "system/system-prompt-extract"
+    }
+
+    const specsToRemove: string[] = []
+    if (!discardEnabled) {
+        specsToRemove.push(DISCARD_TOOL_SPEC)
+    }
+    if (!extractEnabled) {
+        specsToRemove.push(EXTRACT_TOOL_SPEC)
+    }
+
+    return { promptName, specsToRemove }
+}
+
+function removePromptSpecs(content: string, specsToRemove: string[]): string {
+    let updated = content
+    for (const spec of specsToRemove) {
+        updated = updated.split(spec).join("")
+    }
+    return updated
+}
+
+export function filterSystemPromptsForConfig(
+    systemPrompts: string[],
+    config: PluginConfig,
+): string[] {
+    const { specsToRemove } = getSystemPromptState(config)
+    if (specsToRemove.length === 0) {
+        return systemPrompts
+    }
+
+    return systemPrompts
+        .map((prompt) => removePromptSpecs(prompt, specsToRemove))
+        .filter((prompt) => prompt.trim().length > 0)
 }
 
 export function createSystemPromptHandler(
@@ -40,29 +101,12 @@ export function createSystemPromptHandler(
             return
         }
 
-        // Get effective config based on current provider/model
         const config = getEffectiveConfig(state, baseConfig)
+        const { promptName } = getSystemPromptState(config)
 
-        // Skip injection if DCP is disabled for this provider/model
-        if (!config.enabled) {
-            logger.info("DCP disabled for provider/model, skipping system prompt injection", {
-                providerId: state.providerId,
-                modelId: state.modelId,
-            })
-            return
-        }
+        output.system = filterSystemPromptsForConfig(output.system, config)
 
-        const discardEnabled = config.tools.discard.enabled
-        const extractEnabled = config.tools.extract.enabled
-
-        let promptName: string
-        if (discardEnabled && extractEnabled) {
-            promptName = "system/system-prompt-both"
-        } else if (discardEnabled) {
-            promptName = "system/system-prompt-discard"
-        } else if (extractEnabled) {
-            promptName = "system/system-prompt-extract"
-        } else {
+        if (!promptName) {
             logger.debug("No DCP tools enabled for this provider/model, skipping system prompt", {
                 providerId: state.providerId,
                 modelId: state.modelId,

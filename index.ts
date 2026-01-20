@@ -8,6 +8,7 @@ import {
     createCommandExecuteHandler,
     createSystemPromptHandler,
 } from "./lib/hooks"
+import { sendConfigChangeToast } from "./lib/ui/notification"
 
 const plugin: Plugin = (async (ctx) => {
     const baseConfig = getConfig(ctx)
@@ -62,20 +63,12 @@ const plugin: Plugin = (async (ctx) => {
                 const newSignature = computeConfigSignature(effectiveConfig)
 
                 if (state.lastConfigSignature && state.lastConfigSignature !== newSignature) {
-                    // Config changed due to provider/model switch
-                    const configDiff = describeConfigChange(baseConfig, effectiveConfig)
-                    if (configDiff) {
-                        try {
-                            ctx.client.tui.showToast({
-                                body: {
-                                    title: "DCP: Config changed",
-                                    message: `Provider: ${newProviderId || "unknown"}\nModel: ${newModelId || "unknown"}\n${configDiff}`,
-                                    variant: effectiveConfig.enabled ? "info" : "warning",
-                                    duration: 5000,
-                                },
-                            })
-                        } catch {}
-                    }
+                    await sendConfigChangeToast(ctx.client, {
+                        providerId: newProviderId,
+                        modelId: newModelId,
+                        effectiveConfig: effectiveConfig,
+                        baseConfig: baseConfig,
+                    })
                 }
                 state.lastConfigSignature = newSignature
             }
@@ -138,27 +131,5 @@ const plugin: Plugin = (async (ctx) => {
         "command.execute.before": createCommandExecuteHandler(ctx.client, state, logger),
     }
 }) satisfies Plugin
-
-/**
- * Describe what changed between base config and effective config
- */
-function describeConfigChange(
-    baseConfig: ReturnType<typeof getConfig>,
-    effectiveConfig: ReturnType<typeof getConfig>,
-): string | null {
-    const changes: string[] = []
-
-    if (baseConfig.enabled !== effectiveConfig.enabled) {
-        changes.push(effectiveConfig.enabled ? "DCP enabled" : "DCP disabled")
-    }
-    if (baseConfig.tools.discard.enabled !== effectiveConfig.tools.discard.enabled) {
-        changes.push(effectiveConfig.tools.discard.enabled ? "discard enabled" : "discard disabled")
-    }
-    if (baseConfig.tools.extract.enabled !== effectiveConfig.tools.extract.enabled) {
-        changes.push(effectiveConfig.tools.extract.enabled ? "extract enabled" : "extract disabled")
-    }
-
-    return changes.length > 0 ? changes.join(", ") : null
-}
 
 export default plugin

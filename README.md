@@ -164,15 +164,15 @@ You can configure different DCP behavior for specific providers or models using 
                 "enabled": false
             },
             // Custom config for Anthropic
-            "anthropic": {
+            "github-copilot": {
                 // Disable extract tool for all Anthropic models
                 "tools": {
                     "extract": { "enabled": false }
                 },
                 // Model-specific overrides (supports glob patterns)
                 "models": {
-                    // Enable extract for Claude 3.5 Sonnet specifically
-                    "claude-3-5-sonnet*": {
+                    // Enable extract for Claude 4.5 family specifically
+                    "claude-4-5-*": {
                         "tools": {
                             "extract": { "enabled": true }
                         }
@@ -188,13 +188,13 @@ You can configure different DCP behavior for specific providers or models using 
 }
 ```
 
-**Override Precedence:** Base config → Provider override → Model override. Model patterns support glob wildcards (`*` matches any characters, `?` matches single character).
+**Overrides Precedence:** Base config → Provider override → Model override. Override objects use the same shape as the root config (minus `overrides`), so you can reuse any setting at provider or model level. Model patterns support glob wildcards (`*` matches any characters, `?` matches single character).
 
 **Mid-Session Provider/Model Switching:**
 - Pruned tool IDs persist across provider/model switches (DCP remembers what was pruned)
 - Effective config updates immediately when you switch providers/models
 - A toast notification appears when the switch changes DCP behavior (e.g., "DCP disabled" or "discard disabled, extract enabled")
-- System prompt injection adjusts to only include enabled tools
+- System prompt injection adjusts to only include enabled tools and strips disabled tool specs from the system prompt
 
 **Toast Notifications:**
 When switching to a provider/model with different DCP settings, you'll see a notification like:

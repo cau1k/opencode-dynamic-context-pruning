@@ -10,6 +10,67 @@ import { ToolParameterEntry } from "../state"
 import { PluginConfig } from "../config"
 
 export type PruneReason = "completion" | "noise" | "extraction"
+
+type ConfigChangeToastBody = {
+    title: string
+    message: string
+    variant: "info" | "warning"
+    duration: number
+}
+
+type ToastClient = {
+    tui: {
+        showToast: (params: { body: ConfigChangeToastBody }) => void
+    }
+}
+
+export type ConfigChangeParams = {
+    providerId: string | undefined
+    modelId: string | undefined
+    effectiveConfig: PluginConfig
+    baseConfig: PluginConfig
+}
+
+export function describeConfigChange(
+    baseConfig: PluginConfig,
+    effectiveConfig: PluginConfig,
+): string | null {
+    const changes: string[] = []
+
+    if (baseConfig.enabled !== effectiveConfig.enabled) {
+        changes.push(effectiveConfig.enabled ? "DCP enabled" : "DCP disabled")
+    }
+    if (baseConfig.tools.discard.enabled !== effectiveConfig.tools.discard.enabled) {
+        changes.push(effectiveConfig.tools.discard.enabled ? "discard enabled" : "discard disabled")
+    }
+    if (baseConfig.tools.extract.enabled !== effectiveConfig.tools.extract.enabled) {
+        changes.push(effectiveConfig.tools.extract.enabled ? "extract enabled" : "extract disabled")
+    }
+
+    return changes.length > 0 ? changes.join(", ") : null
+}
+
+export async function sendConfigChangeToast(
+    client: ToastClient,
+    params: ConfigChangeParams,
+): Promise<void> {
+    const message = describeConfigChange(params.baseConfig, params.effectiveConfig)
+    if (!message) {
+        return
+    }
+
+    try {
+        client.tui.showToast({
+            body: {
+                title: "DCP: Config changed",
+                message: `Provider: ${params.providerId || "unknown"}\nModel: ${params.modelId || "unknown"}\n${message}`,
+                variant: params.effectiveConfig.enabled ? "info" : "warning",
+                duration: 5000,
+            },
+        })
+    } catch {}
+}
+
 export const PRUNE_REASON_LABELS: Record<PruneReason, string> = {
     completion: "Task Complete",
     noise: "Noise Removal",
