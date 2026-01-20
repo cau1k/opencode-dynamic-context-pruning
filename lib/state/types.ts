@@ -24,6 +24,11 @@ export interface Prune {
     toolIds: string[]
 }
 
+export interface ProviderModelInfo {
+    providerId: string | undefined
+    modelId: string | undefined
+}
+
 export interface SessionState {
     sessionId: string | null
     isSubAgent: boolean
@@ -35,4 +40,8 @@ export interface SessionState {
     lastCompaction: number
     currentTurn: number
     variant: string | undefined
+    // Provider/model tracking for config overrides
+    providerId: string | undefined
+    modelId: string | undefined
+    lastConfigSignature: string | undefined
 }

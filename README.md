@@ -143,6 +143,64 @@ Settings are merged in order:
 Defaults → Global (`~/.config/opencode/dcp.jsonc`) → Config Dir (`$OPENCODE_CONFIG_DIR/dcp.jsonc`) → Project (`.opencode/dcp.jsonc`).
 Each level overrides the previous, so project settings take priority over config-dir and global, which take priority over defaults.
 
+### Provider/Model Overrides
+
+You can configure different DCP behavior for specific providers or models using the `overrides` section:
+
+```jsonc
+{
+    // Base configuration (applies to all providers/models by default)
+    "enabled": true,
+    "tools": {
+        "discard": { "enabled": true },
+        "extract": { "enabled": true }
+    },
+    
+    // Provider and model-specific overrides
+    "overrides": {
+        "provider": {
+            // Disable DCP entirely for OpenAI
+            "openai": {
+                "enabled": false
+            },
+            // Custom config for Anthropic
+            "anthropic": {
+                // Disable extract tool for all Anthropic models
+                "tools": {
+                    "extract": { "enabled": false }
+                },
+                // Model-specific overrides (supports glob patterns)
+                "models": {
+                    // Enable extract for Claude 3.5 Sonnet specifically
+                    "claude-3-5-sonnet*": {
+                        "tools": {
+                            "extract": { "enabled": true }
+                        }
+                    },
+                    // Disable DCP for Haiku models
+                    "claude-*-haiku*": {
+                        "enabled": false
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+**Override Precedence:** Base config → Provider override → Model override. Model patterns support glob wildcards (`*` matches any characters, `?` matches single character).
+
+**Mid-Session Provider/Model Switching:**
+- Pruned tool IDs persist across provider/model switches (DCP remembers what was pruned)
+- Effective config updates immediately when you switch providers/models
+- A toast notification appears when the switch changes DCP behavior (e.g., "DCP disabled" or "discard disabled, extract enabled")
+- System prompt injection adjusts to only include enabled tools
+
+**Toast Notifications:**
+When switching to a provider/model with different DCP settings, you'll see a notification like:
+- "DCP: Config changed - DCP disabled" (when DCP is disabled for the new provider)
+- "DCP: Config changed - extract disabled" (when specific tools are disabled)
+
 Restart OpenCode after making config changes.
 
 ## Limitations

@@ -202,6 +202,140 @@
                     }
                 }
             }
+        },
+        "overrides": {
+            "type": "object",
+            "description": "Per-provider and per-model configuration overrides",
+            "additionalProperties": false,
+            "properties": {
+                "provider": {
+                    "type": "object",
+                    "description": "Provider-specific overrides (e.g., 'anthropic', 'openai')",
+                    "additionalProperties": {
+                        "$ref": "#/$defs/providerOverride"
+                    }
+                }
+            }
+        }
+    },
+    "$defs": {
+        "partialConfig": {
+            "type": "object",
+            "description": "Partial DCP configuration for overrides",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Enable or disable DCP for this provider/model"
+                },
+                "debug": {
+                    "type": "boolean",
+                    "description": "Enable debug logging"
+                },
+                "pruneNotification": {
+                    "type": "string",
+                    "enum": ["off", "minimal", "detailed"],
+                    "description": "Level of notification shown when pruning occurs"
+                },
+                "turnProtection": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "turns": { "type": "number" }
+                    }
+                },
+                "protectedFilePatterns": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                },
+                "tools": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "settings": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "nudgeEnabled": { "type": "boolean" },
+                                "nudgeFrequency": { "type": "number" },
+                                "protectedTools": {
+                                    "type": "array",
+                                    "items": { "type": "string" }
+                                }
+                            }
+                        },
+                        "discard": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "enabled": { "type": "boolean" }
+                            }
+                        },
+                        "extract": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "enabled": { "type": "boolean" },
+                                "showDistillation": { "type": "boolean" }
+                            }
+                        }
+                    }
+                },
+                "strategies": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "deduplication": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "enabled": { "type": "boolean" },
+                                "protectedTools": {
+                                    "type": "array",
+                                    "items": { "type": "string" }
+                                }
+                            }
+                        },
+                        "supersedeWrites": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "enabled": { "type": "boolean" }
+                            }
+                        },
+                        "purgeErrors": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "enabled": { "type": "boolean" },
+                                "turns": { "type": "number" },
+                                "protectedTools": {
+                                    "type": "array",
+                                    "items": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "providerOverride": {
+            "allOf": [
+                { "$ref": "#/$defs/partialConfig" },
+                {
+                    "type": "object",
+                    "properties": {
+                        "models": {
+                            "type": "object",
+                            "description": "Model-specific overrides. Keys can use glob patterns (* and ?) to match model IDs.",
+                            "additionalProperties": {
+                                "$ref": "#/$defs/partialConfig"
+                            }
+                        }
+                    }
+                }
+            ]
         }
     }
 }

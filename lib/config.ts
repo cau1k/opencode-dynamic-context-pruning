@@ -57,6 +57,56 @@ export interface PluginConfig {
         supersedeWrites: SupersedeWrites
         purgeErrors: PurgeErrors
     }
+    overrides?: ProviderOverrides
+}
+
+// Override types for per-provider/model configuration
+// Deeply partial - all nested properties are optional
+export interface PartialPluginConfig {
+    enabled?: boolean
+    debug?: boolean
+    pruneNotification?: "off" | "minimal" | "detailed"
+    turnProtection?: {
+        enabled?: boolean
+        turns?: number
+    }
+    protectedFilePatterns?: string[]
+    tools?: {
+        settings?: {
+            nudgeEnabled?: boolean
+            nudgeFrequency?: number
+            protectedTools?: string[]
+        }
+        discard?: {
+            enabled?: boolean
+        }
+        extract?: {
+            enabled?: boolean
+            showDistillation?: boolean
+        }
+    }
+    strategies?: {
+        deduplication?: {
+            enabled?: boolean
+            protectedTools?: string[]
+        }
+        supersedeWrites?: {
+            enabled?: boolean
+        }
+        purgeErrors?: {
+            enabled?: boolean
+            turns?: number
+            protectedTools?: string[]
+        }
+    }
+}
+
+export interface ModelOverride extends PartialPluginConfig {
+    models?: Record<string, PartialPluginConfig>
+}
+
+export interface ProviderOverrides {
+    provider?: Record<string, ModelOverride>
 }
 
 const DEFAULT_PROTECTED_TOOLS = [
@@ -107,14 +157,22 @@ export const VALID_CONFIG_KEYS = new Set([
     "strategies.purgeErrors.enabled",
     "strategies.purgeErrors.turns",
     "strategies.purgeErrors.protectedTools",
+    // Provider/model overrides
+    "overrides",
+    "overrides.provider",
 ])
 
 // Extract all key paths from a config object for validation
+// Skips validation inside overrides.provider.* since provider/model names are dynamic
 function getConfigKeyPaths(obj: Record<string, any>, prefix = ""): string[] {
     const keys: string[] = []
     for (const key of Object.keys(obj)) {
         const fullKey = prefix ? `${prefix}.${key}` : key
         keys.push(fullKey)
+        // Skip deep validation for overrides.provider.* (dynamic provider/model keys)
+        if (fullKey.startsWith("overrides.provider.")) {
+            continue
+        }
         if (obj[key] && typeof obj[key] === "object" && !Array.isArray(obj[key])) {
             keys.push(...getConfigKeyPaths(obj[key], fullKey))
         }
@@ -663,7 +721,121 @@ function deepCloneConfig(config: PluginConfig): PluginConfig {
                 protectedTools: [...config.strategies.purgeErrors.protectedTools],
             },
         },
+        overrides: config.overrides ? JSON.parse(JSON.stringify(config.overrides)) : undefined,
     }
+}
+
+/**
+ * Convert a glob pattern with * and ? wildcards to a RegExp
+ * @param pattern - Glob pattern (e.g., "claude-*", "gpt-4?")
+ * @returns RegExp for matching
+ */
+export function globToRegex(pattern: string): RegExp {
+    const escaped = pattern
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escape regex special chars except * and ?
+        .replace(/\*/g, ".*") // * matches any characters
+        .replace(/\?/g, ".") // ? matches single character
+    return new RegExp(`^${escaped}$`, "i") // case-insensitive, full match
+}
+
+/**
+ * Find the first matching model pattern for a given modelId
+ * @param models - Map of model patterns to overrides
+ * @param modelId - The model ID to match
+ * @returns The matching pattern key or null
+ */
+export function findMatchingModelPattern(
+    models: Record<string, PartialPluginConfig> | undefined,
+    modelId: string,
+): string | null {
+    if (!models) return null
+    // Check exact match first
+    if (models[modelId]) return modelId
+    // Check glob patterns
+    for (const pattern of Object.keys(models)) {
+        if (pattern.includes("*") || pattern.includes("?")) {
+            if (globToRegex(pattern).test(modelId)) {
+                return pattern
+            }
+        }
+    }
+    return null
+}
+
+/**
+ * Merge a partial config override into a base config
+ * @param base - The base config to merge into
+ * @param override - The partial override to apply
+ * @returns Merged config
+ */
+function mergePartialConfig(base: PluginConfig, override: PartialPluginConfig): PluginConfig {
+    return {
+        enabled: override.enabled ?? base.enabled,
+        debug: override.debug ?? base.debug,
+        pruneNotification: override.pruneNotification ?? base.pruneNotification,
+        turnProtection: {
+            enabled: override.turnProtection?.enabled ?? base.turnProtection.enabled,
+            turns: override.turnProtection?.turns ?? base.turnProtection.turns,
+        },
+        protectedFilePatterns: [
+            ...new Set([...base.protectedFilePatterns, ...(override.protectedFilePatterns ?? [])]),
+        ],
+        tools: mergeTools(base.tools, override.tools as any),
+        strategies: mergeStrategies(base.strategies, override.strategies as any),
+        overrides: base.overrides,
+    }
+}
+
+/**
+ * Resolve the effective config for a specific provider/model combination
+ * Merges: base → provider override → model override
+ * @param baseConfig - The base configuration
+ * @param providerId - The provider ID (e.g., "anthropic", "openai")
+ * @param modelId - The model ID (e.g., "claude-3-5-sonnet", "gpt-4o")
+ * @returns The resolved effective config for this provider/model
+ */
+export function resolveActiveConfig(
+    baseConfig: PluginConfig,
+    providerId: string | undefined,
+    modelId: string | undefined,
+): PluginConfig {
+    let config = deepCloneConfig(baseConfig)
+
+    if (!providerId || !baseConfig.overrides?.provider) {
+        return config
+    }
+
+    // Apply provider override
+    const providerOverride = baseConfig.overrides.provider[providerId]
+    if (providerOverride) {
+        const { models, ...providerConfig } = providerOverride
+        config = mergePartialConfig(config, providerConfig)
+
+        // Apply model override if modelId provided and matches
+        if (modelId && models) {
+            const matchingPattern = findMatchingModelPattern(models, modelId)
+            if (matchingPattern) {
+                config = mergePartialConfig(config, models[matchingPattern])
+            }
+        }
+    }
+
+    return config
+}
+
+/**
+ * Compute a signature for the effective config to detect changes
+ * Used for toast notifications when provider/model switches change DCP behavior
+ */
+export function computeConfigSignature(config: PluginConfig): string {
+    return JSON.stringify({
+        enabled: config.enabled,
+        discardEnabled: config.tools.discard.enabled,
+        extractEnabled: config.tools.extract.enabled,
+        deduplicationEnabled: config.strategies.deduplication.enabled,
+        supersedeWritesEnabled: config.strategies.supersedeWrites.enabled,
+        purgeErrorsEnabled: config.strategies.purgeErrors.enabled,
+    })
 }
 
 export function getConfig(ctx: PluginInput): PluginConfig {
@@ -705,6 +877,7 @@ export function getConfig(ctx: PluginInput): PluginConfig {
                 ],
                 tools: mergeTools(config.tools, result.data.tools as any),
                 strategies: mergeStrategies(config.strategies, result.data.strategies as any),
+                overrides: result.data.overrides ?? config.overrides,
             }
         }
     } else {
@@ -747,6 +920,7 @@ export function getConfig(ctx: PluginInput): PluginConfig {
                 ],
                 tools: mergeTools(config.tools, result.data.tools as any),
                 strategies: mergeStrategies(config.strategies, result.data.strategies as any),
+                overrides: result.data.overrides ?? config.overrides,
             }
         }
     }
@@ -786,6 +960,7 @@ export function getConfig(ctx: PluginInput): PluginConfig {
                 ],
                 tools: mergeTools(config.tools, result.data.tools as any),
                 strategies: mergeStrategies(config.strategies, result.data.strategies as any),
+                overrides: result.data.overrides ?? config.overrides,
             }
         }
     }

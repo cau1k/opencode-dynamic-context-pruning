@@ -56,6 +56,9 @@ export function createSessionState(): SessionState {
         lastCompaction: 0,
         currentTurn: 0,
         variant: undefined,
+        providerId: undefined,
+        modelId: undefined,
+        lastConfigSignature: undefined,
     }
 }
 
@@ -75,6 +78,9 @@ export function resetSessionState(state: SessionState): void {
     state.lastCompaction = 0
     state.currentTurn = 0
     state.variant = undefined
+    state.providerId = undefined
+    state.modelId = undefined
+    state.lastConfigSignature = undefined
 }
 
 export async function ensureSessionInitialized(

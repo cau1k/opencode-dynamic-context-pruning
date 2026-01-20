@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { getConfig } from "./lib/config"
+import { getConfig, resolveActiveConfig, computeConfigSignature } from "./lib/config"
 import { Logger } from "./lib/logger"
 import { createSessionState } from "./lib/state"
 import { createDiscardTool, createExtractTool } from "./lib/strategies"
@@ -10,27 +10,28 @@ import {
 } from "./lib/hooks"
 
 const plugin: Plugin = (async (ctx) => {
-    const config = getConfig(ctx)
+    const baseConfig = getConfig(ctx)
 
-    if (!config.enabled) {
+    if (!baseConfig.enabled) {
         return {}
     }
 
-    const logger = new Logger(config.debug)
+    const logger = new Logger(baseConfig.debug)
     const state = createSessionState()
 
     logger.info("DCP initialized", {
-        strategies: config.strategies,
+        strategies: baseConfig.strategies,
+        hasOverrides: !!baseConfig.overrides?.provider,
     })
 
     return {
-        "experimental.chat.system.transform": createSystemPromptHandler(state, logger, config),
+        "experimental.chat.system.transform": createSystemPromptHandler(state, logger, baseConfig),
 
         "experimental.chat.messages.transform": createChatMessageTransformHandler(
             ctx.client,
             state,
             logger,
-            config,
+            baseConfig,
         ),
         "chat.message": async (
             input: {
@@ -43,26 +44,66 @@ const plugin: Plugin = (async (ctx) => {
             _output: any,
         ) => {
             // Cache variant from real user messages (not synthetic)
-            // This avoids scanning all messages to find variant
             state.variant = input.variant
-            logger.debug("Cached variant from chat.message hook", { variant: input.variant })
+
+            // Cache provider/model for config override resolution
+            const newProviderId = input.model?.providerID
+            const newModelId = input.model?.modelID
+
+            const providerChanged = state.providerId !== newProviderId
+            const modelChanged = state.modelId !== newModelId
+
+            state.providerId = newProviderId
+            state.modelId = newModelId
+
+            // Check if effective config changed and show toast if needed
+            if ((providerChanged || modelChanged) && baseConfig.overrides?.provider) {
+                const effectiveConfig = resolveActiveConfig(baseConfig, newProviderId, newModelId)
+                const newSignature = computeConfigSignature(effectiveConfig)
+
+                if (state.lastConfigSignature && state.lastConfigSignature !== newSignature) {
+                    // Config changed due to provider/model switch
+                    const configDiff = describeConfigChange(baseConfig, effectiveConfig)
+                    if (configDiff) {
+                        try {
+                            ctx.client.tui.showToast({
+                                body: {
+                                    title: "DCP: Config changed",
+                                    message: `Provider: ${newProviderId || "unknown"}\nModel: ${newModelId || "unknown"}\n${configDiff}`,
+                                    variant: effectiveConfig.enabled ? "info" : "warning",
+                                    duration: 5000,
+                                },
+                            })
+                        } catch {}
+                    }
+                }
+                state.lastConfigSignature = newSignature
+            }
+
+            logger.debug("Cached provider/model from chat.message hook", {
+                variant: input.variant,
+                providerId: newProviderId,
+                modelId: newModelId,
+                providerChanged,
+                modelChanged,
+            })
         },
         tool: {
-            ...(config.tools.discard.enabled && {
+            ...(baseConfig.tools.discard.enabled && {
                 discard: createDiscardTool({
                     client: ctx.client,
                     state,
                     logger,
-                    config,
+                    config: baseConfig,
                     workingDirectory: ctx.directory,
                 }),
             }),
-            ...(config.tools.extract.enabled && {
+            ...(baseConfig.tools.extract.enabled && {
                 extract: createExtractTool({
                     client: ctx.client,
                     state,
                     logger,
-                    config,
+                    config: baseConfig,
                     workingDirectory: ctx.directory,
                 }),
             }),
@@ -80,8 +121,8 @@ const plugin: Plugin = (async (ctx) => {
             logger.info("Registered /dcp-stats and /dcp-context commands")
 
             const toolsToAdd: string[] = []
-            if (config.tools.discard.enabled) toolsToAdd.push("discard")
-            if (config.tools.extract.enabled) toolsToAdd.push("extract")
+            if (baseConfig.tools.discard.enabled) toolsToAdd.push("discard")
+            if (baseConfig.tools.extract.enabled) toolsToAdd.push("extract")
 
             if (toolsToAdd.length > 0) {
                 const existingPrimaryTools = opencodeConfig.experimental?.primary_tools ?? []
@@ -97,5 +138,27 @@ const plugin: Plugin = (async (ctx) => {
         "command.execute.before": createCommandExecuteHandler(ctx.client, state, logger),
     }
 }) satisfies Plugin
+
+/**
+ * Describe what changed between base config and effective config
+ */
+function describeConfigChange(
+    baseConfig: ReturnType<typeof getConfig>,
+    effectiveConfig: ReturnType<typeof getConfig>,
+): string | null {
+    const changes: string[] = []
+
+    if (baseConfig.enabled !== effectiveConfig.enabled) {
+        changes.push(effectiveConfig.enabled ? "DCP enabled" : "DCP disabled")
+    }
+    if (baseConfig.tools.discard.enabled !== effectiveConfig.tools.discard.enabled) {
+        changes.push(effectiveConfig.tools.discard.enabled ? "discard enabled" : "discard disabled")
+    }
+    if (baseConfig.tools.extract.enabled !== effectiveConfig.tools.extract.enabled) {
+        changes.push(effectiveConfig.tools.extract.enabled ? "extract enabled" : "extract disabled")
+    }
+
+    return changes.length > 0 ? changes.join(", ") : null
+}
 
 export default plugin

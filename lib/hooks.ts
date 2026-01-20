@@ -1,6 +1,7 @@
 import type { SessionState, WithParts } from "./state"
 import type { Logger } from "./logger"
 import type { PluginConfig } from "./config"
+import { resolveActiveConfig } from "./config"
 import { syncToolCache } from "./state/tool-cache"
 import { deduplicate, supersedeWrites, purgeErrors } from "./strategies"
 import { prune, insertPruneToolContext } from "./messages"
@@ -15,10 +16,18 @@ const INTERNAL_AGENT_SIGNATURES = [
     "Summarize what was done in this conversation",
 ]
 
+/**
+ * Get the effective config for the current provider/model
+ * Falls back to base config if no overrides match
+ */
+function getEffectiveConfig(state: SessionState, baseConfig: PluginConfig): PluginConfig {
+    return resolveActiveConfig(baseConfig, state.providerId, state.modelId)
+}
+
 export function createSystemPromptHandler(
     state: SessionState,
     logger: Logger,
-    config: PluginConfig,
+    baseConfig: PluginConfig,
 ) {
     return async (_input: unknown, output: { system: string[] }) => {
         if (state.isSubAgent) {
@@ -28,6 +37,18 @@ export function createSystemPromptHandler(
         const systemText = output.system.join("\n")
         if (INTERNAL_AGENT_SIGNATURES.some((sig) => systemText.includes(sig))) {
             logger.info("Skipping DCP system prompt injection for internal agent")
+            return
+        }
+
+        // Get effective config based on current provider/model
+        const config = getEffectiveConfig(state, baseConfig)
+
+        // Skip injection if DCP is disabled for this provider/model
+        if (!config.enabled) {
+            logger.info("DCP disabled for provider/model, skipping system prompt injection", {
+                providerId: state.providerId,
+                modelId: state.modelId,
+            })
             return
         }
 
@@ -42,6 +63,10 @@ export function createSystemPromptHandler(
         } else if (extractEnabled) {
             promptName = "system/system-prompt-extract"
         } else {
+            logger.debug("No DCP tools enabled for this provider/model, skipping system prompt", {
+                providerId: state.providerId,
+                modelId: state.modelId,
+            })
             return
         }
 
@@ -54,12 +79,24 @@ export function createChatMessageTransformHandler(
     client: any,
     state: SessionState,
     logger: Logger,
-    config: PluginConfig,
+    baseConfig: PluginConfig,
 ) {
     return async (input: {}, output: { messages: WithParts[] }) => {
         await checkSession(client, state, logger, output.messages)
 
         if (state.isSubAgent) {
+            return
+        }
+
+        // Get effective config based on current provider/model
+        const config = getEffectiveConfig(state, baseConfig)
+
+        // Skip processing if DCP is disabled for this provider/model
+        if (!config.enabled) {
+            logger.debug("DCP disabled for provider/model, skipping message transform", {
+                providerId: state.providerId,
+                modelId: state.modelId,
+            })
             return
         }
 
